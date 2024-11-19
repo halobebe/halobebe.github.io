@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flow Algorithm Visualizer</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.28.1/cytoscape.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f0f0;
+        }
+
+        .container {
+            display: flex;
+            height: 100vh;
+        }
+
+        .sidebar {
+            width: 300px;
+            background-color: #fff;
+            padding: 20px;
+            border-right: 1px solid #ddd;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .graph-container {
+            flex-grow: 1;
+            position: relative;
+        }
+
+        #cy {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+        }
+
+        button {
+            padding: 10px;
+            margin: 5px 0;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        button:hover {
+            background-color: #45a049;
+        }
+
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+
+        button.active {
+            background-color: #2196F3;
+        }
+
+        .info-panel {
+            margin-top: 20px;
+            padding: 10px;
+            background-color: #e9e9e9;
+            border-radius: 4px;
+        }
+
+        #status {
+            padding: 10px;
+            margin-top: 10px;
+            border-radius: 4px;
+            display: none;
+        }
+
+        .success {
+            background-color: #d4edda;
+            border-color: #c3e6cb;
+            color: #155724;
+        }
+
+        .error {
+            background-color: #f8d7da;
+            border-color: #f5c6cb;
+            color: #721c24;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="sidebar">
+            <h2>Flow Algorithm Visualizer</h2>
+            <button id="generateRandom">Generate Random Graph</button>
+            <button id="addNode">Add Node</button>
+            <button id="addEdge">Add Edge</button>
+            <button id="setSource">Set Source</button>
+            <button id="setSink">Set Sink</button>
+            <button id="clear">Clear Graph</button>
+            <button id="runAlgorithm">Run Algorithm</button>
+            <div class="step-controls">
+                <button id="prevStep" disabled>Previous</button>
+                <button id="nextStep" disabled>Next</button>
+            </div>
+            <div id="status"></div>
+            <div class="info-panel">
+                <h3>Maximum Flow: <span id="maxFlow">0</span></h3>
+                <h3>Current Step:</h3>
+                <p id="currentStep">-</p>
+            </div>
+        </div>
+        <div class="graph-container">
+            <div id="cy"></div>
+        </div>
+    </div>
+
+    <script>
+        const cy = cytoscape({
+            container: document.getElementById('cy'),
+            style: [
+                {
+                    selector: 'node',
+                    style: {
+                        'background-color': '#666',
+                        'label': 'data(id)',
+                        'text-valign': 'center',
+                        'text-halign': 'center',
+                        'width': 40,
+                        'height': 40,
+                        'color': '#fff',
+                        'font-size': '14px',
+                        'font-weight': 'bold'
+                    }
+                },
+                {
+                    selector: 'edge',
+                    style: {
+                        'width': 3,
+                        'line-color': '#666',
+                        'target-arrow-color': '#666',
+                        'target-arrow-shape': 'triangle',
+                        'curve-style': 'bezier',
+                        'label': 'data(weight)',
+                        'text-rotation': 'autorotate',
+                        'font-size': '14px',
+                        'text-margin-y': -10
+                    }
+                },
+                {
+                    selector: '.source',
+                    style: {
+                        'background-color': '#4CAF50'
+                    }
+                },
+                {
+                    selector: '.sink',
+                    style: {
+                        'background-color': '#f44336'
+                    }
+                },
+                {
+                    selector: '.highlighted',
+                    style: {
+                        'line-color': '#2196F3',
+                        'target-arrow-color': '#2196F3',
+                        'width': 4
+                    }
+                }
+            ]
+        });
+
+        let nodeCount = 0;
+        let mode = 'none';
+        let source = null;
+        let sink = null;
+        let steps = [];
+        let currentStepIndex = -1;
+
+        function showStatus(message, isError = false) {
+            const status = document.getElementById('status');
+            status.textContent = message;
+            status.style.display = 'block';
+            status.className = isError ? 'error' : 'success';
+            setTimeout(() => status.style.display = 'none', 3000);
+        }
+
+        function generateRandom() {
+            cy.elements().remove();
+            nodeCount = 0;
+            source = null;
+            sink = null;
+            const nodes = 6;
+            const radius = 200;
+            const centerX = cy.width() / 2;
+            const centerY = cy.height() / 2;
+            for (let i = 0; i < nodes; i++) {
+                const angle = (2 * Math.PI * i) / nodes;
+                const x = centerX + radius * Math.cos(angle);
+                const y = centerY + radius * Math.sin(angle);
+                
+                cy.add({
+                    group: 'nodes',
+                    data: { id: 'n' + i },
+                    position: { x, y }
+                });
+                nodeCount++;
+            }
+            const firstNode = cy.$('node[id = "n0"]');
+            const lastNode = cy.$('node[id = "n' + (nodes-1) + '"]');
+            firstNode.addClass('source');
+            lastNode.addClass('sink');
+            source = firstNode;
+            sink = lastNode;
+            for (let i = 0; i < nodes; i++) {
+                for (let j = i + 1; j < nodes; j++) {
+                    if (Math.random() < 0.5) {
+                        const weight = Math.floor(Math.random() * 10) + 1;
+                        cy.add({
+                            group: 'edges',
+                            data: {
+                                id: `e${i}-${j}`,
+                                source: 'n' + i,
+                                target: 'n' + j,
+                                weight: weight,
+                                flow: 0
+                            }
+                        });
+                    }
+                }
+            }
+
+            showStatus('Random graph generated');
+        }
+
+        function findPath(start, end, visited = new Set()) {
+            if (start === end) return [start];
+            visited.add(start);
+
+            const edges = cy.$(`node#${start}`).outgoers('edge');
+            for (let edge of edges) {
+                const target = edge.target().id();
+                if (!visited.has(target)) {
+                    const path = findPath(target, end, visited);
+                    if (path) {
+                        return [start, ...path];
+                    }
+                }
+            }
+            return null;
+        }
+
+        function maxFlow(capacity, source, sink) {
+    const n = capacity.length; 
+    const flow = Array.from({ length: n }, () => Array(n).fill(0)); 
+    let maxFlow = 0;
+
+    while (true) {
+         const parent = Array(n).fill(-1); 
+        const queue = [source];
+        parent[source] = source;
+        while (queue.length > 0 && parent[sink] === -1) {
+            const current = queue.shift();
+            for (let next = 0; next < n; next++) {
+                if (
+                    parent[next] === -1 && 
+                    capacity[current][next] - flow[current][next] > 0 
+                ) {
+                    parent[next] = current; 
+                    queue.push(next);
+                    if (next === sink) break; 
+                }
+            }
+        }
+
+        if (parent[sink] === -1) break;
+         let pathFlow = Infinity;
+        for (let v = sink; v !== source; v = parent[v]) {
+            const u = parent[v];
+            pathFlow = Math.min(pathFlow, capacity[u][v] - flow[u][v]);
+        }
+
+ for (let v = sink; v !== source; v = parent[v]) {
+            const u = parent[v];
+            flow[u][v] += pathFlow;
+            flow[v][u] -= pathFlow;
+        }
+
+        maxFlow += pathFlow; 
+    }
+
+    return maxFlow;
+}
+function runAlgorithm() {
+    if (!source || !sink) {
+        showStatus('Source or sink not set!', true);
+        return;
+    }
+
+    const nodes = cy.nodes();
+    const edges = cy.edges();
+    const nodeIndex = {}; 
+    nodes.forEach((node, index) => {
+        nodeIndex[node.id()] = index;
+    });
+
+   const n = nodes.length;
+    const capacity = Array.from({ length: n }, () => Array(n).fill(0));
+
+    edges.forEach(edge => {
+        const sourceIndex = nodeIndex[edge.source().id()];
+        const targetIndex = nodeIndex[edge.target().id()];
+        capacity[sourceIndex][targetIndex] = edge.data('weight');
+    });
+
+    const sourceIndex = nodeIndex[source.id()];
+    const sinkIndex = nodeIndex[sink.id()];
+
+    const result = maxFlow(capacity, sourceIndex, sinkIndex);
+
+    document.getElementById('maxFlow').textContent = result;
+    showStatus(`Maximum Flow: ${result}`);
+}
+        document.getElementById('generateRandom').addEventListener('click', generateRandom);
+        document.getElementById('clear').addEventListener('click', () => {
+            cy.elements().remove();
+            nodeCount = 0;
+            source = null;
+            sink = null;
+            showStatus('Graph cleared');
+        });
+        document.getElementById('runAlgorithm').addEventListener('click', runAlgorithm);
+
+         cy.on('tap', function(evt) {
+            if (evt.target === cy && mode === 'addNode') {
+                const pos = evt.position;
+                cy.add({
+                    group: 'nodes',
+                    data: { id: 'n' + nodeCount++ },
+                    position: pos
+                });
+            }
+        });
+
+        document.getElementById('addNode').addEventListener('click', () => {
+            mode = mode === 'addNode' ? 'none' : 'addNode';
+            document.getElementById('addNode').classList.toggle('active');
+            document.getElementById('addEdge').classList.remove('active');
+            showStatus('Click on the canvas to add nodes');
+        });
+
+        document.getElementById('addEdge').addEventListener('click', () => {
+            mode = mode === 'addEdge' ? 'none' : 'addEdge';
+            document.getElementById('addEdge').classList.toggle('active');
+            document.getElementById('addNode').classList.remove('active');
+            showStatus('Click two nodes to create an edge');
+        });
+
+        let edgeSource = null;
+        cy.on('tap', 'node', function(evt) {
+            const node = evt.target;
+            
+            if (mode === 'addEdge') {
+                if (!edgeSource) {
+                    edgeSource = node;
+                    showStatus('Select target node');
+                } else {
+                    const weight = Math.floor(Math.random() * 10) + 1;
+                    cy.add({
+                        group: 'edges',
+                        data: {
+                            id: `e${edgeSource.id()}-${node.id()}`,
+                            source: edgeSource.id(),
+                            target: node.id(),
+                            weight: weight,
+                            flow: 0
+                        }
+                    });
+                    edgeSource = null;
+                    showStatus('Edge added with weight: ' + weight);
+                }
+            }
+        });
+
+        document.getElementById('setSource').addEventListener('click', () => {
+            mode = 'setSource';
+            showStatus('Click a node to set as source');
+        });
+
+        document.getElementById('setSink').addEventListener('click', () => {
+            mode = 'setSink';
+            showStatus('Click a node to set as sink');
+        });
+
+        cy.on('tap', 'node', function(evt) {
+            const node = evt.target;
+            if (mode === 'setSource') {
+                if (source) source.removeClass('source');
+                node.addClass('source');
+                source = node;
+                mode = 'none';
+                showStatus('Source node set');
+            } else if (mode === 'setSink') {
+                if (sink) sink.removeClass('sink');
+                node.addClass('sink');
+                sink = node;
+                mode = 'none';
+                showStatus('Sink node set');
+            }
+        });
+    </script>
+</body>
+</html>
